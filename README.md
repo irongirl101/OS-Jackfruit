@@ -65,9 +65,32 @@ sudo ./engine stop beta
 ## 3. Demo with Screenshots
 
 ### 1. Multi-Container Supervision
+![Multi-container supervision](images/image-1.png)
+Multiple containers (alpha, beta) running under a single supervisor process.
+
+### 2. Metadata Tracking
+
+![Metadata tracking](images/image-2.png)
+
+Supervisor metadata tracking for active containers.
+
+### 3. Bounded-Buffer Logging
+
+
+### 4. CLI and IPC
+
+### 5. Soft-Limit Warning
+
+
+### 6. Hard-Limit Enforcement
 
 
 
+### 7. Scheduling Experiment
+
+
+
+### 8. Clean Teardown
 
 
 
