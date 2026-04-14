@@ -71,27 +71,31 @@ Multiple containers (alpha, beta) running under a single supervisor process.
 ### 2. Metadata Tracking
 
 ![Metadata tracking](images/image-2.png)
-
 Supervisor metadata tracking for active containers.
 
 ### 3. Bounded-Buffer Logging
-
+![Bounded-buffer logging](images/image-3.png)
+Bounded-buffer logging pipeline showing producer-consumer behavior with real-time container logs.
 
 ### 4. CLI and IPC
+![CLI and IPC](images/image-4.png)
+CLI command interacting with supervisor via IPC mechanism (user-space communication).
 
 ### 5. Soft-Limit Warning
-
+![Soft-limit warning](images/image-5.png)
+Kernel module reporting soft memory limit warning for container gamma.
 
 ### 6. Hard-Limit Enforcement
-
-
+![Hard-limit enforcement](images/image-6.png)
+Hard memory limit enforced - container terminated by kernel and reflected in supervisor metadata.
 
 ### 7. Scheduling Experiment
-
-
+![Scheduling experiment](images/image-7.png)
+Scheduling experiment showing CPU and I/O workload interaction and observable resource sharing differences.
 
 ### 8. Clean Teardown
-
+![Clean teardown](images/image-8.png)
+Clean teardown with all containers reaped and no zombie processes remaining.
 
 
 ## 4. Engineering Analysis
@@ -127,9 +131,13 @@ It does not measure pages swapped to disk, memory-mapped file contents that are 
 The soft and hard limits serve different policies because a soft limit acts as an early warning mechanism that logs a single event when first exceeded, while a hard limit enforces termination to prevent a runaway process from consuming available memory. 
 The enforcement mechanism belongs in kernel space rather than user space because only the kernel has direct access to `struct mm_struct` containing accurate RSS information, and user space cannot reliably intercept memory allocations or page faults to enforce limits, and any user-space polling would have inherent race conditions with rapid allocations.
 
-### 4.5 Scheduling Behavior
-*To be added*
-
+### 4.5 Scheduling Behaviour
+When running two CPU-bound workloads with different nice values, the scheduler heavily favored the high-priority task (nice -20), allowing it to complete significantly faster than the low-priority task (nice 19). 
+This shows that while CFS aims for fairness; it uses virtual runtime (`vruntime`) weighting to allow users to deliberately sacrifice the throughput of lower-priority processes to ensure critical tasks get CPU time.
+Furthermore, when running a CPU-bound workload alongside an I/O-bound workload at the same priority, the I/O-bound task remained highly responsive and completed its iterations first. 
+Because the I/O-bound task spends most of its time sleeping or waiting on I/O, its `vruntime` grows very slowly compared to the CPU-bound task which never voluntarily yields the CPU. 
+When the I/O-bound task wakes up, its lower `vruntime` causes CFS to immediately preempt the CPU-bound task. 
+This behavior highlights how Linux scheduling achieves low latency and high responsiveness for interactive tasks without completely starving CPU-bound tasks, dynamically optimizing overall system fairness and throughput.
 ## 5. Design Decisions and Tradeoffs
 
 ### Namespace Isolation
@@ -159,6 +167,30 @@ We also prefer a mutex over spinlock because it reduces the amount of CPU cycles
 
 ## 6. Scheduler Experiment Results
 
-*To be added*
+To demonstrate the behavior of the Linux scheduler, two controlled scheduling experiments were conducted using our multi-container runtime. The experiments used two distinct workloads: `cpu_hog` (a purely CPU-bound process that continuously burns cycles) and `io_pulse` (an I/O-bound process that performs short bursts of I/O followed by sleeping). 
+
+### Experiment A: Nice Value Comparison (CPU vs. CPU)
+In this experiment, two CPU-bound containers were launched simultaneously but with drastically different priorities to observe CPU allocation.
+- **Container 1 (`high_prio`):** `cpu_hog` running at `nice = -20` (Highest priority)
+- **Container 2 (`low_prio`):** `cpu_hog` running at `nice = 19` (Lowest priority)
+
+**Observations:**
+During execution, the `high_prio` container used most of the CPU cycles. While both workloads were tasked with completing 15 iterations, `high_prio` progressed rapidly and finished its execution long before `low_prio` made significant progress. The CPU share allocation heavily favored the `high_prio` container, while the `low_prio` container was heavily penalised and starved of CPU time. Consequently, `high_prio` completed first (fastest) and `low_prio` completed second.
+
+**Analysis:**
+This outcome illustrates how the Linux Completely Fair Scheduler (CFS) utilizes `nice` values to weight the virtual runtime (`vruntime`) of processes. Because a `nice` value of -20 has a drastically higher weight than 19, CFS allocates a significantly larger time slice to the `high_prio` container. Meanwhile, the `vruntime` of the `low_prio` container advances much faster relative to its actual execution time, causing it to quickly lose its turn on the CPU. This demonstrates how priority weighting can be used to explicitly favor critical CPU tasks.
+
+### Experiment B: CPU-Bound vs. I/O-Bound
+In this experiment, a CPU-bound container and an I/O-bound container were launched simultaneously with identical priorities (`nice = 0`).
+- **Container 1 (`cpu_work`):** `cpu_hog` (CPU-bound)
+- **Container 2 (`io_work`):** `io_pulse` (I/O-bound)
+
+**Observations:**
+Despite the `cpu_work` container constantly demanding CPU cycles, the `io_work` container remained highly responsive and progressed steadily. The `cpu_work` container experienced continuous execution of its pure CPU computation workload, while the `io_work` container experienced immediate scheduling upon waking for its intermittent I/O + sleep workload. The I/O-bound workload completed its 20 iterations efficiently and finished before the CPU-bound workload, even though they shared the same base priority. Therefore, `io_work` completed first and `cpu_work` completed second.
+
+**Analysis:**
+This experiment highlights CFS's inherent bias toward interactive and I/O-bound tasks to maintain system responsiveness. Because `io_pulse` spends most of its time sleeping or waiting on I/O, its `vruntime` grows very slowly compared to the `cpu_hog`, which never voluntarily yields the CPU. 
+
+When the I/O-bound task wakes up, its `vruntime` is significantly lower than that of the CPU-bound task. Consequently, CFS immediately preempts the CPU task to allow the I/O task to run. Once the brief I/O burst is over and the task blocks again, the CPU task resumes. This design allows I/O-bound processes to remain highly responsive and complete their tasks without being starved by CPU-heavy neighbors.
 
 
