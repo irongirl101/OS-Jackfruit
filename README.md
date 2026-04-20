@@ -5,8 +5,8 @@
 A lightweight Linux container runtime in C with a long-running supervisor and a kernel-space memory monitor.
 
 ## 1. Team Information
-- ** Aditi Vignesh - PES1UG24CS023
-- ** Piya Banerjee - PES1UG25CS830
+- ###Aditi Vignesh - PES1UG24CS023
+- ###Piya Banerjee - PES1UG25CS830
 
 ## 2. Build, Load Instructions 
 ```
